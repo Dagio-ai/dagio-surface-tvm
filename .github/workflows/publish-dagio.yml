@@ -1,0 +1,47 @@
+name: Publish Dagio TVM Web Runtime
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Dagio release tag containing the patched source
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Validate the requested tag
+        working-directory: .
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: '[[ "$RELEASE_TAG" =~ ^dagio-v[0-9]+\.[0-9]+\.[0-9]+-dev[0-9]+-surface\.[0-9]+$ ]]'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: refs/tags/${{ inputs.release_tag }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24'
+          registry-url: https://npm.pkg.github.com
+          scope: '@dagio-ai'
+      - name: Verify the package identity
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: node -e 'const p = require("./package.json"); if (p.name !== "@dagio-ai/surface-web-runtime" || "dagio-v" + p.version !== process.env.RELEASE_TAG) process.exit(1)'
+      - run: npm ci --ignore-scripts --registry=https://registry.npmjs.org
+      - run: npm run prepare
+      - run: npm run check:types
+      - run: npm run build
+      - run: npm test
+      - run: npm publish --ignore-scripts --tag surface
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
