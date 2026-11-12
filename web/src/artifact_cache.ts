@@ -85,7 +85,7 @@ export interface ArtifactCacheTemplate {
    *
     * Note: This is an async function.
    */
-  fetchWithCache(url: string, storetype?: string, signal?: AbortSignal): Promise<any>;
+  fetchWithCache(url: string, storetype?: string, signal?: AbortSignal, onProgress?: (loaded: number) => void): Promise<any>;
 
   /**
    * Fetch data from url and add into cache. If already exists in cache, should return instantly.
@@ -646,13 +646,14 @@ export class ArtifactOPFSCache implements ArtifactCacheTemplate {
     url: string,
     storetype?: string,
     signal?: AbortSignal,
+    onProgress?: (loaded: number) => void,
   ): Promise<any> {
     // Try the cache first to avoid a redundant OPFS lookup on a hit.
     const cached = await this.readFromCache(url, storetype);
     if (cached !== undefined) {
       return cached;
     }
-    await this.addToCache(url, storetype, signal);
+    await this.addToCache(url, storetype, signal, onProgress);
     const fetched = await this.readFromCache(url, storetype);
     if (fetched === undefined) {
       throw new Error("ArtifactOPFSCache failed to fetch: " + url);
@@ -678,6 +679,7 @@ export class ArtifactOPFSCache implements ArtifactCacheTemplate {
     url: string,
     _storetype?: string,
     signal?: AbortSignal,
+    onProgress?: (loaded: number) => void,
   ): Promise<void> {
     if (await this.store.has(url)) {
       return;
@@ -692,7 +694,7 @@ export class ArtifactOPFSCache implements ArtifactCacheTemplate {
         `ArtifactOPFSCache: Unable to fetch ${url}, received status ${response.status}`,
       );
     }
-    await this.store.write(url, response);
+    await this.store.write(url, response, onProgress);
   }
 
   async hasAllKeys(keys: string[]): Promise<boolean> {

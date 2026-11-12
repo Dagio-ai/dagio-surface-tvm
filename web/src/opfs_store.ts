@@ -161,7 +161,7 @@ export class OPFSStore {
     }
   }
 
-  async write(url: string, response: Response): Promise<void> {
+  async write(url: string, response: Response, onProgress?: (loaded: number) => void): Promise<void> {
     try {
       const directory = await this.getScopedDirectory();
       const baseName = await this.hashUrl(url);
@@ -173,7 +173,7 @@ export class OPFSStore {
         this.getPayloadFilename(baseName),
         { create: true },
       );
-      const nbytes = await this.writePayload(payloadHandle, response);
+      const nbytes = await this.writePayload(payloadHandle, response, onProgress);
       const recordHandle = await directory.getFileHandle(
         this.getRecordFilename(baseName),
         { create: true },
@@ -367,17 +367,19 @@ export class OPFSStore {
   private async writePayload(
     handle: OPFSFileHandle,
     response: Response,
+    onProgress?: (loaded: number) => void,
   ): Promise<number> {
     const syncHandle = await this.openSyncAccessHandle(handle, "readwrite");
     if (syncHandle !== undefined) {
-      return this.writePayloadWithSyncHandle(syncHandle, response);
+      return this.writePayloadWithSyncHandle(syncHandle, response, onProgress);
     }
-    return this.writePayloadWithWritable(handle, response);
+    return this.writePayloadWithWritable(handle, response, onProgress);
   }
 
   private async writePayloadWithWritable(
     handle: OPFSFileHandle,
     response: Response,
+    onProgress?: (loaded: number) => void,
   ): Promise<number> {
     const writable = await handle.createWritable();
     try {
@@ -390,8 +392,9 @@ export class OPFSStore {
             if (done) {
               break;
             }
-            await writable.write(value);
             nbytes += value.byteLength;
+            onProgress?.(nbytes);
+            await writable.write(value);
           }
         } finally {
           reader.releaseLock();
@@ -400,6 +403,7 @@ export class OPFSStore {
         return nbytes;
       }
       const payload = await response.arrayBuffer();
+      onProgress?.(payload.byteLength);
       await writable.write(payload);
       await writable.close();
       return payload.byteLength;
@@ -429,6 +433,7 @@ export class OPFSStore {
   private async writePayloadWithSyncHandle(
     syncHandle: OPFSSyncAccessHandle,
     response: Response,
+    onProgress?: (loaded: number) => void,
   ): Promise<number> {
     try {
       syncHandle.truncate(0);
@@ -441,6 +446,7 @@ export class OPFSStore {
             if (done) {
               break;
             }
+            onProgress?.(offset + value.byteLength);
             syncHandle.write(value, { at: offset });
             offset += value.byteLength;
           }
@@ -449,6 +455,7 @@ export class OPFSStore {
         }
       } else {
         const payload = await response.arrayBuffer();
+        onProgress?.(payload.byteLength);
         syncHandle.write(new Uint8Array(payload), { at: 0 });
         offset = payload.byteLength;
       }
